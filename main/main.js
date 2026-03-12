@@ -1,6 +1,9 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
-const { createProfile, getAllProfiles, getProfileById, updateProfile, deleteProfile } = require('./profileManager')
+const {
+  createProfile, getAllProfiles, getProfileById,
+  updateProfile, deleteProfile, importProxiesFromFile,
+} = require('./profileManager')
 const { runProfile, isProfileRunning, stopProfile } = require('./chromeManager')
 
 const isDev = !app.isPackaged
@@ -60,3 +63,26 @@ ipcMain.handle('profiles:run', async (_, { id }) => {
 ipcMain.handle('profiles:is-running', (_, { id }) => isProfileRunning(id))
 
 ipcMain.handle('profiles:stop', (_, { id }) => stopProfile(id))
+
+// ── Proxy import ──────────────────────────────────────────────────────────────
+
+// Open native file picker and return selected path
+ipcMain.handle('dialog:open-file', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Select Proxy File',
+    filters: [{ name: 'Text Files', extensions: ['txt'] }],
+    properties: ['openFile'],
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return result.filePaths[0]
+})
+
+// Import all proxies from a txt file (user:pass@host:port format)
+ipcMain.handle('proxies:import-file', async (_, { filePath, defaultUrl }) => {
+  try {
+    const profiles = await importProxiesFromFile(filePath, defaultUrl || '')
+    return { success: true, count: profiles.length, profiles }
+  } catch (e) {
+    return { success: false, error: e.message }
+  }
+})

@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   runProfile:       (id)   => ipcRenderer.invoke('profiles:run', { id }),
   isProfileRunning: (id)   => ipcRenderer.invoke('profiles:is-running', { id }),
   stopProfile:      (id)   => ipcRenderer.invoke('profiles:stop', { id }),
+  openFilePicker:   ()     => ipcRenderer.invoke('dialog:open-file'),
+  importProxies:    (filePath, defaultUrl) => ipcRenderer.invoke('proxies:import-file', { filePath, defaultUrl }),
 })

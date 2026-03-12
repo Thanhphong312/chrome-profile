@@ -2,47 +2,89 @@
 const path = require('path')
 const fs   = require('fs')
 
-// ─── Data pools ───────────────────────────────────────────────────────────────
+// ─── User-Agent pools (Chrome 120-133, realistic distribution) ───────────────
 
 const WIN_UAS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
 ]
+
 const MAC_UAS = [
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
 ]
 
-const OS_PROFILES = [
-  { platform: 'Win32',        ua_pool: WIN_UAS, langs: ['en-US', 'en-GB', 'de-DE', 'fr-FR', 'es-ES', 'pt-BR'] },
-  { platform: 'MacIntel',     ua_pool: MAC_UAS, langs: ['en-US', 'en-GB', 'ja-JP', 'zh-CN', 'ko-KR', 'fr-FR'] },
-]
+// ─── WebGL pools — MUST match OS (no Apple GPU on Windows, no ANGLE on Mac) ──
 
-const RESOLUTIONS = [
-  [1920, 1080], [1366, 768], [1440, 900], [1536, 864],
-  [1280, 720],  [1600, 900], [2560, 1440],[1280, 800],
-]
-
-const HW_CONCURRENCY = [2, 4, 4, 6, 8, 8, 12, 16]  // weighted toward 4/8
-const DEVICE_MEMORY  = [4, 4, 8, 8, 8]              // weighted toward 8
-
-const WEBGL_PROFILES = [
+const WIN_WEBGL = [
   { vendor: 'Google Inc. (Intel)',  renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+  { vendor: 'Google Inc. (Intel)',  renderer: 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
   { vendor: 'Google Inc. (Intel)',  renderer: 'ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)' },
   { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
   { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
-  { vendor: 'Apple',                renderer: 'Apple M1' },
-  { vendor: 'Apple',                renderer: 'Apple M2' },
+  { vendor: 'Google Inc. (NVIDIA)', renderer: 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1660 Ti Direct3D11 vs_5_0 ps_5_0, D3D11)' },
+  { vendor: 'Google Inc. (AMD)',    renderer: 'ANGLE (AMD, Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)' },
 ]
 
-const TIMEZONES = [
-  'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'America/Toronto',
-  'America/Sao_Paulo','Europe/London',   'Europe/Paris',        'Europe/Berlin',
-  'Europe/Moscow',    'Asia/Tokyo',      'Asia/Seoul',          'Asia/Shanghai',
-  'Asia/Singapore',   'Asia/Bangkok',    'Asia/Dubai',          'Australia/Sydney',
+const MAC_WEBGL = [
+  { vendor: 'Apple',                renderer: 'Apple M1' },
+  { vendor: 'Apple',                renderer: 'Apple M2' },
+  { vendor: 'Apple',                renderer: 'Apple M1 Pro' },
+  { vendor: 'Google Inc. (Apple)',  renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)' },
+  { vendor: 'Google Inc. (Apple)',  renderer: 'ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)' },
+]
+
+// ─── OS profiles (WebGL pool now matched per OS) ─────────────────────────────
+
+const OS_PROFILES = [
+  { platform: 'Win32',    ua_pool: WIN_UAS, webgl_pool: WIN_WEBGL },
+  { platform: 'MacIntel', ua_pool: MAC_UAS, webgl_pool: MAC_WEBGL },
+]
+
+const RESOLUTIONS = [
+  [1920, 1080], [1920, 1080], [1920, 1080], // weighted — most common
+  [1366, 768],  [1440, 900],  [1536, 864],
+  [1280, 720],  [1600, 900],  [2560, 1440],
+]
+
+const HW_CONCURRENCY = [4, 4, 4, 8, 8, 8, 8, 12, 16]  // weighted toward 4/8
+const DEVICE_MEMORY  = [4, 4, 8, 8, 8]
+
+// ─── Country → timezone & language maps ──────────────────────────────────────
+
+const COUNTRY_TIMEZONE = {
+  US: 'America/New_York', CA: 'America/Toronto',  GB: 'Europe/London',
+  DE: 'Europe/Berlin',    FR: 'Europe/Paris',      NL: 'Europe/Amsterdam',
+  RU: 'Europe/Moscow',    UA: 'Europe/Kiev',       PL: 'Europe/Warsaw',
+  JP: 'Asia/Tokyo',       KR: 'Asia/Seoul',        CN: 'Asia/Shanghai',
+  TW: 'Asia/Taipei',      SG: 'Asia/Singapore',    TH: 'Asia/Bangkok',
+  VN: 'Asia/Ho_Chi_Minh', ID: 'Asia/Jakarta',      IN: 'Asia/Kolkata',
+  AU: 'Australia/Sydney', BR: 'America/Sao_Paulo', MX: 'America/Mexico_City',
+  IT: 'Europe/Rome',      ES: 'Europe/Madrid',     SE: 'Europe/Stockholm',
+  TR: 'Europe/Istanbul',  AE: 'Asia/Dubai',        HK: 'Asia/Hong_Kong',
+}
+
+const COUNTRY_LANGUAGE = {
+  US: 'en-US', CA: 'en-US', GB: 'en-GB', AU: 'en-AU', SG: 'en-SG', IN: 'en-IN',
+  DE: 'de-DE', AT: 'de-DE', CH: 'de-DE',
+  FR: 'fr-FR', BE: 'fr-FR',
+  JP: 'ja-JP', KR: 'ko-KR', CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK',
+  RU: 'ru-RU', UA: 'uk-UA', PL: 'pl-PL', TR: 'tr-TR',
+  BR: 'pt-BR', PT: 'pt-PT', ES: 'es-ES', MX: 'es-MX', IT: 'it-IT',
+  NL: 'nl-NL', SE: 'sv-SE', TH: 'th-TH', VN: 'vi-VN', ID: 'id-ID',
+  AE: 'ar-AE', VN: 'vi-VN',
+}
+
+const FALLBACK_TIMEZONES = [
+  'America/New_York', 'America/Chicago', 'America/Los_Angeles',
+  'Europe/London', 'Europe/Paris', 'Europe/Berlin',
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,25 +93,41 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)] }
 
 // ─── Generator ────────────────────────────────────────────────────────────────
 
-function generateFingerprint() {
-  const os   = pick(OS_PROFILES)
-  const lang = pick(os.langs)
-  const webgl = pick(WEBGL_PROFILES)
+/**
+ * @param {object} geo - optional { timezone, country } from IP geolocation
+ */
+function generateFingerprint(geo = {}) {
+  const os    = pick(OS_PROFILES)
+  const webgl = pick(os.webgl_pool)
   const res   = pick(RESOLUTIONS)
+
+  // Timezone: from geo > fallback pool
+  const timezone = (geo.timezone && geo.timezone.includes('/'))
+    ? geo.timezone
+    : pick(FALLBACK_TIMEZONES)
+
+  // Language: from geo country map > en-US default
+  const language = (geo.country && COUNTRY_LANGUAGE[geo.country])
+    ? COUNTRY_LANGUAGE[geo.country]
+    : 'en-US'
+
+  const langs = language === 'en-US'
+    ? ['en-US', 'en']
+    : [language, 'en-US', 'en']
 
   return {
     fp_user_agent:           pick(os.ua_pool),
     fp_platform:             os.platform,
     fp_hardware_concurrency: pick(HW_CONCURRENCY),
     fp_device_memory:        pick(DEVICE_MEMORY),
-    fp_language:             lang,
-    fp_languages:            JSON.stringify(lang === 'en-US' ? ['en-US'] : [lang, 'en-US']),
+    fp_language:             language,
+    fp_languages:            JSON.stringify(langs),
     fp_screen_width:         res[0],
     fp_screen_height:        res[1],
-    fp_canvas_noise:         String((Math.random() * 0.35 + 0.05).toFixed(6)),
+    fp_canvas_noise:         String((Math.random() * 0.4 + 0.1).toFixed(6)),
     fp_webgl_vendor:         webgl.vendor,
     fp_webgl_renderer:       webgl.renderer,
-    fp_timezone:             pick(TIMEZONES),
+    fp_timezone:             timezone,
   }
 }
 
@@ -132,6 +190,16 @@ function buildInjectScript(v) {
   defNav('deviceMemory',        ${v.deviceMemory});
   defNav('language',            ${JSON.stringify(v.language)});
   defNav('languages',           Object.freeze(${JSON.stringify(v.languages)}));
+  defNav('maxTouchPoints',      0);
+  defNav('vendor',              'Google Inc.');
+
+  // ── NetworkInformation (navigator.connection) ──────────────────────────────
+  try {
+    const conn = { effectiveType: '4g', type: 'wifi', downlink: 10, rtt: 50, saveData: false };
+    Object.defineProperty(navigator, 'connection',         { get: () => conn, configurable: true });
+    Object.defineProperty(navigator, 'mozConnection',      { get: () => undefined, configurable: true });
+    Object.defineProperty(navigator, 'webkitConnection',   { get: () => undefined, configurable: true });
+  } catch(e){}
 
   // ── screen ─────────────────────────────────────────────────────────────────
   function defScreen(prop, val) {
@@ -141,8 +209,15 @@ function buildInjectScript(v) {
   defScreen('height',      ${v.screenHeight});
   defScreen('availWidth',  ${v.screenWidth});
   defScreen('availHeight', ${v.screenHeight - 40});
+  defScreen('colorDepth',  24);
+  defScreen('pixelDepth',  24);
 
-  // ── canvas noise ───────────────────────────────────────────────────────────
+  // ── window geometry ────────────────────────────────────────────────────────
+  try { Object.defineProperty(window, 'outerWidth',      { get: () => ${v.screenWidth},  configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'outerHeight',     { get: () => ${v.screenHeight}, configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'devicePixelRatio',{ get: () => 1,                 configurable: true }); } catch(e){}
+
+  // ── canvas noise (imperceptible, changes hash) ──────────────────────────────
   const NOISE = ${v.canvasNoise};
   const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
   const _origToBlob    = HTMLCanvasElement.prototype.toBlob;
@@ -151,25 +226,52 @@ function buildInjectScript(v) {
     try {
       const ctx = canvas.getContext('2d');
       if (!ctx || !canvas.width || !canvas.height) return;
-      // Perturb only first 32x32 area — enough to change hash, invisible to users
       const w = Math.min(canvas.width, 32), h = Math.min(canvas.height, 32);
       const img = CanvasRenderingContext2D.prototype.getImageData.call(ctx, 0, 0, w, h);
       for (let i = 0; i < img.data.length; i += 4) {
-        img.data[i]   = Math.min(255, img.data[i]   + Math.round(NOISE * (Math.random() > 0.5 ? 1 : -1)));
-        img.data[i+1] = Math.min(255, img.data[i+1] + Math.round(NOISE * (Math.random() > 0.5 ? 1 : -1)));
+        img.data[i]   = Math.min(255, Math.max(0, img.data[i]   + Math.round(NOISE * (Math.random() > 0.5 ? 1 : -1))));
+        img.data[i+1] = Math.min(255, Math.max(0, img.data[i+1] + Math.round(NOISE * (Math.random() > 0.5 ? 1 : -1))));
       }
       ctx.putImageData(img, 0, 0);
     } catch(e) {}
   }
 
-  HTMLCanvasElement.prototype.toDataURL = function(...a) { applyNoise(this); return _origToDataURL.apply(this, a); };
+  HTMLCanvasElement.prototype.toDataURL = function(...a)     { applyNoise(this); return _origToDataURL.apply(this, a); };
   HTMLCanvasElement.prototype.toBlob    = function(cb, ...a) { applyNoise(this); return _origToBlob.call(this, cb, ...a); };
+
+  // ── AudioContext noise ─────────────────────────────────────────────────────
+  try {
+    const _OrigAudio = window.AudioContext || window.webkitAudioContext;
+    const _OrigOffline = window.OfflineAudioContext;
+
+    function patchAnalyser(ctx) {
+      const _orig = ctx.createAnalyser.bind(ctx);
+      ctx.createAnalyser = function() {
+        const node = _orig();
+        const _origGetFloat = node.getFloatFrequencyData.bind(node);
+        node.getFloatFrequencyData = function(arr) {
+          _origGetFloat(arr);
+          for (let i = 0; i < arr.length; i += 16) arr[i] += NOISE * 0.001;
+        };
+        return node;
+      };
+    }
+
+    if (_OrigOffline) {
+      window.OfflineAudioContext = function(...args) {
+        const ctx = new _OrigOffline(...args);
+        patchAnalyser(ctx);
+        return ctx;
+      };
+      Object.setPrototypeOf(window.OfflineAudioContext, _OrigOffline);
+    }
+  } catch(e) {}
 
   // ── WebGL ──────────────────────────────────────────────────────────────────
   const VENDOR   = ${JSON.stringify(v.webglVendor)};
   const RENDERER = ${JSON.stringify(v.webglRenderer)};
 
-  ['webgl','webgl2','experimental-webgl'].forEach(type => {
+  ['webgl', 'webgl2', 'experimental-webgl'].forEach(type => {
     try {
       const probe = document.createElement('canvas').getContext(type);
       if (!probe) return;
