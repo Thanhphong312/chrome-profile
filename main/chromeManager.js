@@ -48,9 +48,6 @@ async function runProfile(profileIn) {
 
     // Prevent real IP leak via WebRTC
     '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
-
-    // Remove automation detection flag
-    '--disable-blink-features=AutomationControlled',
   ]
 
   if (proxyUrl) args.push(`--proxy-server=${proxyUrl}`)

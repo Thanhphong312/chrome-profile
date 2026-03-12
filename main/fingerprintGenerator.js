@@ -201,6 +201,7 @@ function buildInjectScript(v) {
   defNav('languages',           Object.freeze(${JSON.stringify(v.languages)}));
   defNav('maxTouchPoints',      0);
   defNav('vendor',              'Google Inc.');
+  defNav('webdriver',           false);
 
   // ── navigator.userAgentData (UA Client Hints — must match UA string) ───────
   try {
