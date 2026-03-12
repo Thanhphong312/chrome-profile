@@ -4,6 +4,7 @@ const CryptoJS  = require('crypto-js')
 const path      = require('path')
 const fs        = require('fs')
 const https     = require('https')
+const http      = require('http')
 const { app }   = require('electron')
 const { generateFingerprint, buildExtension } = require('./fingerprintGenerator')
 
@@ -34,8 +35,9 @@ function getProfilesDir() {
  * Fetch geo data from one URL, return { timezone, country } or null.
  */
 function fetchGeo(url, parse) {
+  const lib = url.startsWith('https') ? https : http
   return new Promise((resolve) => {
-    const req = https.get(url, (res) => {
+    const req = lib.get(url, (res) => {
       let data = ''
       res.on('data', c => { data += c })
       res.on('end', () => {
