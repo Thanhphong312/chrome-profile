@@ -31,26 +31,42 @@ function getProfilesDir() {
 }
 
 /**
- * Lookup timezone + country for a proxy host via ipinfo.io.
- * Returns { timezone, country } or {} on failure/timeout.
+ * Fetch geo data from one URL, return { timezone, country } or null.
  */
-function geoLocateProxy(host) {
+function fetchGeo(url, parse) {
   return new Promise((resolve) => {
-    const req = https.get(`https://ipinfo.io/${host}/json`, (res) => {
+    const req = https.get(url, (res) => {
       let data = ''
-      res.on('data', chunk => { data += chunk })
+      res.on('data', c => { data += c })
       res.on('end', () => {
-        try {
-          const json = JSON.parse(data)
-          resolve({ timezone: json.timezone || null, country: json.country || null })
-        } catch {
-          resolve({})
-        }
+        try { resolve(parse(JSON.parse(data))) } catch { resolve(null) }
       })
     })
-    req.on('error', () => resolve({}))
-    req.setTimeout(4000, () => { req.destroy(); resolve({}) })
+    req.on('error', () => resolve(null))
+    req.setTimeout(5000, () => { req.destroy(); resolve(null) })
   })
+}
+
+/**
+ * Lookup timezone + country using 2 APIs in parallel, first valid result wins.
+ * ipinfo.io and ip-api.com cover different databases → reduces geo errors.
+ */
+async function geoLocateProxy(host) {
+  const [r1, r2] = await Promise.all([
+    fetchGeo(
+      `https://ipinfo.io/${host}/json`,
+      j => (j.timezone && j.country ? { timezone: j.timezone, country: j.country } : null)
+    ),
+    fetchGeo(
+      `http://ip-api.com/json/${host}?fields=countryCode,timezone,status`,
+      j => (j.status === 'success' && j.timezone ? { timezone: j.timezone, country: j.countryCode } : null)
+    ),
+  ])
+
+  // Prefer ip-api result if both succeed (more accurate for datacenter IPs)
+  const result = r2 || r1
+  console.log(`[geo] ${host} →`, result || 'failed, using fallback')
+  return result || {}
 }
 
 /**

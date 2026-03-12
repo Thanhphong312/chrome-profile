@@ -333,6 +333,16 @@ function buildInjectScript(v) {
     };
   } catch(e){}
 
+  // ── WebRTC — block entirely to prevent real IP leak ───────────────────────
+  // Chrome flag alone is insufficient when proxy is HTTP (not SOCKS5)
+  try {
+    const _noRTC = () => { throw new DOMException('WebRTC disabled', 'NotSupportedError'); };
+    ['RTCPeerConnection','RTCDataChannel','RTCSessionDescription',
+     'RTCIceCandidate','webkitRTCPeerConnection','mozRTCPeerConnection'].forEach(k => {
+      try { Object.defineProperty(window, k, { value: undefined, configurable: true, writable: true }); } catch(e){}
+    });
+  } catch(e){}
+
   // ── WebGL ──────────────────────────────────────────────────────────────────
   const VENDOR   = ${JSON.stringify(v.webglVendor)};
   const RENDERER = ${JSON.stringify(v.webglRenderer)};
