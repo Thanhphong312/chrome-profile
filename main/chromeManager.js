@@ -3,6 +3,7 @@ const { spawn } = require('child_process')
 const path = require('path')
 const { prepareProxy, closeProxy } = require('./proxyManager')
 const { ensureFingerprint } = require('./profileManager')
+const { buildExtension } = require('./fingerprintGenerator')
 
 // profileId -> ChildProcess
 const runningProfiles = new Map()
@@ -21,6 +22,10 @@ async function runProfile(profileIn) {
   // Back-fill fp data for profiles created before the fingerprint feature
   const profile = ensureFingerprint(profileIn)
   const { id } = profile
+
+  // Always rebuild inject.js so the latest WebRTC/fingerprint code is used
+  // (stored fp_ values stay the same — only the JS template is refreshed)
+  buildExtension(profile.profile_path, profile)
 
   if (runningProfiles.has(id)) {
     runningProfiles.get(id).kill()
