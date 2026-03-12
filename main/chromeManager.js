@@ -1,5 +1,8 @@
+'use strict'
 const { spawn } = require('child_process')
+const path = require('path')
 const { prepareProxy, closeProxy } = require('./proxyManager')
+const { ensureFingerprint } = require('./profileManager')
 
 // profileId -> ChildProcess
 const runningProfiles = new Map()
@@ -14,10 +17,11 @@ function getChromePath() {
   return '/usr/bin/google-chrome'
 }
 
-async function runProfile(profile) {
+async function runProfile(profileIn) {
+  // Back-fill fp data for profiles created before the fingerprint feature
+  const profile = ensureFingerprint(profileIn)
   const { id } = profile
 
-  // Kill any existing instance for this profile
   if (runningProfiles.has(id)) {
     runningProfiles.get(id).kill()
     runningProfiles.delete(id)
@@ -29,11 +33,24 @@ async function runProfile(profile) {
     proxyUrl = await prepareProxy(profile)
   }
 
+  const extPath = path.join(profile.profile_path, 'fp-ext')
+
   const args = [
     `--user-data-dir=${profile.profile_path}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--new-window',
+
+    // Fingerprint spoofing
+    `--user-agent=${profile.fp_user_agent}`,
+    `--lang=${profile.fp_language}`,
+    `--load-extension=${extPath}`,
+
+    // Prevent real IP leak via WebRTC
+    '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
+
+    // Remove automation detection flag
+    '--disable-blink-features=AutomationControlled',
   ]
 
   if (proxyUrl) args.push(`--proxy-server=${proxyUrl}`)
@@ -42,6 +59,7 @@ async function runProfile(profile) {
   const child = spawn(getChromePath(), args, {
     detached: false,
     stdio: 'ignore',
+    env: { ...process.env, TZ: profile.fp_timezone },
   })
 
   runningProfiles.set(id, child)

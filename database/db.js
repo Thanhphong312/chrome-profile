@@ -4,6 +4,21 @@ const { app } = require('electron')
 
 let db
 
+const FP_COLUMNS = [
+  { name: 'fp_user_agent',           type: 'TEXT' },
+  { name: 'fp_platform',             type: 'TEXT' },
+  { name: 'fp_hardware_concurrency', type: 'INTEGER' },
+  { name: 'fp_device_memory',        type: 'INTEGER' },
+  { name: 'fp_language',             type: 'TEXT' },
+  { name: 'fp_languages',            type: 'TEXT' },
+  { name: 'fp_screen_width',         type: 'INTEGER' },
+  { name: 'fp_screen_height',        type: 'INTEGER' },
+  { name: 'fp_canvas_noise',         type: 'TEXT' },
+  { name: 'fp_webgl_vendor',         type: 'TEXT' },
+  { name: 'fp_webgl_renderer',       type: 'TEXT' },
+  { name: 'fp_timezone',             type: 'TEXT' },
+]
+
 function getDb() {
   if (db) return db
 
@@ -27,6 +42,16 @@ function getDb() {
       created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `)
+
+  // Migration: add fingerprint columns if missing
+  const existing = new Set(
+    db.prepare('PRAGMA table_info(profiles)').all().map(r => r.name)
+  )
+  for (const col of FP_COLUMNS) {
+    if (!existing.has(col.name)) {
+      db.exec(`ALTER TABLE profiles ADD COLUMN ${col.name} ${col.type}`)
+    }
+  }
 
   return db
 }
