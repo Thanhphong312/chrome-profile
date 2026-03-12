@@ -1,0 +1,9 @@
+{
+  "appName": "Chrome Proxy Manager",
+  "version": "1.0.0",
+  "chromePaths": {
+    "darwin": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "win32": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "linux": "/usr/bin/google-chrome"
+  }
+}
