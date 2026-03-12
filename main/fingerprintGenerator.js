@@ -154,7 +154,11 @@ function buildExtension(profilePath, fp) {
     'utf8'
   )
 
-  const langs = JSON.parse(fp.fp_languages)
+  const langs        = JSON.parse(fp.fp_languages)
+  const chromeVer    = (fp.fp_user_agent.match(/Chrome\/(\d+)/) || [])[1] || '133'
+  const osPlatform   = fp.fp_platform === 'Win32' ? 'Windows' : 'macOS'
+  const osVersion    = fp.fp_platform === 'Win32' ? '10.0.0' : '14.0.0'
+
   fs.writeFileSync(
     path.join(extDir, 'inject.js'),
     buildInjectScript({
@@ -169,6 +173,10 @@ function buildExtension(profilePath, fp) {
       canvasNoise:         parseFloat(fp.fp_canvas_noise),
       webglVendor:         fp.fp_webgl_vendor,
       webglRenderer:       fp.fp_webgl_renderer,
+      timezone:            fp.fp_timezone,
+      chromeVersion:       chromeVer,
+      uaPlatform:          osPlatform,
+      uaPlatformVersion:   osVersion,
     }),
     'utf8'
   )
@@ -179,8 +187,9 @@ function buildExtension(profilePath, fp) {
 function buildInjectScript(v) {
   return `(function(){
   'use strict';
+  const NOISE = ${v.canvasNoise};
 
-  // ── navigator ──────────────────────────────────────────────────────────────
+  // ── navigator basic ────────────────────────────────────────────────────────
   function defNav(prop, val) {
     try { Object.defineProperty(navigator, prop, { get: () => val, configurable: true }); } catch(e){}
   }
@@ -193,12 +202,42 @@ function buildInjectScript(v) {
   defNav('maxTouchPoints',      0);
   defNav('vendor',              'Google Inc.');
 
-  // ── NetworkInformation (navigator.connection) ──────────────────────────────
+  // ── navigator.userAgentData (UA Client Hints — must match UA string) ───────
+  try {
+    const _ver = ${JSON.stringify(v.chromeVersion)};
+    const _brands = [
+      { brand: 'Chromium',      version: _ver },
+      { brand: 'Google Chrome', version: _ver },
+      { brand: 'Not-A.Brand',   version: '99' },
+    ];
+    const _uaData = {
+      brands:   _brands,
+      mobile:   false,
+      platform: ${JSON.stringify(v.uaPlatform)},
+      getHighEntropyValues: async (hints) => {
+        const r = {};
+        if (hints.includes('architecture'))    r.architecture    = 'x86';
+        if (hints.includes('bitness'))         r.bitness         = '64';
+        if (hints.includes('brands'))          r.brands          = _brands;
+        if (hints.includes('fullVersionList')) r.fullVersionList = _brands.map(b => ({ brand: b.brand, version: b.version + '.0.0.0' }));
+        if (hints.includes('mobile'))          r.mobile          = false;
+        if (hints.includes('model'))           r.model           = '';
+        if (hints.includes('platform'))        r.platform        = ${JSON.stringify(v.uaPlatform)};
+        if (hints.includes('platformVersion')) r.platformVersion = ${JSON.stringify(v.uaPlatformVersion)};
+        if (hints.includes('uaFullVersion'))   r.uaFullVersion   = _ver + '.0.0.0';
+        return r;
+      },
+      toJSON: () => ({ brands: _brands, mobile: false, platform: ${JSON.stringify(v.uaPlatform)} }),
+    };
+    defNav('userAgentData', _uaData);
+  } catch(e){}
+
+  // ── NetworkInformation ─────────────────────────────────────────────────────
   try {
     const conn = { effectiveType: '4g', type: 'wifi', downlink: 10, rtt: 50, saveData: false };
-    Object.defineProperty(navigator, 'connection',         { get: () => conn, configurable: true });
-    Object.defineProperty(navigator, 'mozConnection',      { get: () => undefined, configurable: true });
-    Object.defineProperty(navigator, 'webkitConnection',   { get: () => undefined, configurable: true });
+    Object.defineProperty(navigator, 'connection',       { get: () => conn, configurable: true });
+    Object.defineProperty(navigator, 'mozConnection',    { get: () => undefined, configurable: true });
+    Object.defineProperty(navigator, 'webkitConnection', { get: () => undefined, configurable: true });
   } catch(e){}
 
   // ── screen ─────────────────────────────────────────────────────────────────
@@ -213,16 +252,41 @@ function buildInjectScript(v) {
   defScreen('pixelDepth',  24);
 
   // ── window geometry ────────────────────────────────────────────────────────
-  try { Object.defineProperty(window, 'outerWidth',      { get: () => ${v.screenWidth},  configurable: true }); } catch(e){}
-  try { Object.defineProperty(window, 'outerHeight',     { get: () => ${v.screenHeight}, configurable: true }); } catch(e){}
-  try { Object.defineProperty(window, 'devicePixelRatio',{ get: () => 1,                 configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'outerWidth',       { get: () => ${v.screenWidth},  configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'outerHeight',      { get: () => ${v.screenHeight}, configurable: true }); } catch(e){}
+  try { Object.defineProperty(window, 'devicePixelRatio', { get: () => 1,                 configurable: true }); } catch(e){}
 
-  // ── canvas noise (imperceptible, changes hash) ──────────────────────────────
-  const NOISE = ${v.canvasNoise};
+  // ── window.chrome (must exist in real Chrome, Electron may omit it) ────────
+  try {
+    if (!window.chrome || !window.chrome.runtime) {
+      window.chrome = {
+        app: { isInstalled: false },
+        runtime: { id: undefined },
+        loadTimes: function() { return {}; },
+        csi: function() { return {}; },
+      };
+    }
+  } catch(e){}
+
+  // ── Timezone consistency (belt-and-suspenders over TZ env var) ────────────
+  try {
+    const _TZ = ${JSON.stringify(v.timezone)};
+    const _OrigDTF = Intl.DateTimeFormat;
+    function PatchedDTF(locale, opts) {
+      opts = opts || {};
+      if (!opts.timeZone) opts = Object.assign({}, opts, { timeZone: _TZ });
+      return new _OrigDTF(locale, opts);
+    }
+    PatchedDTF.prototype        = _OrigDTF.prototype;
+    PatchedDTF.supportedLocalesOf = _OrigDTF.supportedLocalesOf.bind(_OrigDTF);
+    Intl.DateTimeFormat = PatchedDTF;
+  } catch(e){}
+
+  // ── Canvas noise ───────────────────────────────────────────────────────────
   const _origToDataURL = HTMLCanvasElement.prototype.toDataURL;
   const _origToBlob    = HTMLCanvasElement.prototype.toBlob;
 
-  function applyNoise(canvas) {
+  function applyCanvasNoise(canvas) {
     try {
       const ctx = canvas.getContext('2d');
       if (!ctx || !canvas.width || !canvas.height) return;
@@ -233,39 +297,40 @@ function buildInjectScript(v) {
         img.data[i+1] = Math.min(255, Math.max(0, img.data[i+1] + Math.round(NOISE * (Math.random() > 0.5 ? 1 : -1))));
       }
       ctx.putImageData(img, 0, 0);
-    } catch(e) {}
+    } catch(e){}
   }
 
-  HTMLCanvasElement.prototype.toDataURL = function(...a)     { applyNoise(this); return _origToDataURL.apply(this, a); };
-  HTMLCanvasElement.prototype.toBlob    = function(cb, ...a) { applyNoise(this); return _origToBlob.call(this, cb, ...a); };
+  HTMLCanvasElement.prototype.toDataURL = function(...a)     { applyCanvasNoise(this); return _origToDataURL.apply(this, a); };
+  HTMLCanvasElement.prototype.toBlob    = function(cb, ...a) { applyCanvasNoise(this); return _origToBlob.call(this, cb, ...a); };
 
-  // ── AudioContext noise ─────────────────────────────────────────────────────
+  // ── Font fingerprint — spoof measureText metrics ───────────────────────────
   try {
-    const _OrigAudio = window.AudioContext || window.webkitAudioContext;
-    const _OrigOffline = window.OfflineAudioContext;
+    const _origMeasure = CanvasRenderingContext2D.prototype.measureText;
+    const _fontNoise   = NOISE * 0.000012; // sub-pixel, imperceptible
+    CanvasRenderingContext2D.prototype.measureText = function(text) {
+      const m = _origMeasure.call(this, text);
+      return new Proxy(m, {
+        get(t, prop) {
+          const val = t[prop];
+          if (typeof val === 'number') return val + _fontNoise;
+          return typeof val === 'function' ? val.bind(t) : val;
+        }
+      });
+    };
+  } catch(e){}
 
-    function patchAnalyser(ctx) {
-      const _orig = ctx.createAnalyser.bind(ctx);
-      ctx.createAnalyser = function() {
-        const node = _orig();
-        const _origGetFloat = node.getFloatFrequencyData.bind(node);
-        node.getFloatFrequencyData = function(arr) {
-          _origGetFloat(arr);
-          for (let i = 0; i < arr.length; i += 16) arr[i] += NOISE * 0.001;
-        };
-        return node;
-      };
-    }
-
-    if (_OrigOffline) {
-      window.OfflineAudioContext = function(...args) {
-        const ctx = new _OrigOffline(...args);
-        patchAnalyser(ctx);
-        return ctx;
-      };
-      Object.setPrototypeOf(window.OfflineAudioContext, _OrigOffline);
-    }
-  } catch(e) {}
+  // ── Audio fingerprint — patch AudioBuffer.getChannelData (the real read point)
+  try {
+    const _origGetChannelData = AudioBuffer.prototype.getChannelData;
+    const _audioNoise = NOISE * 1e-7; // inaudible, but changes the hash
+    AudioBuffer.prototype.getChannelData = function(channel) {
+      const data = _origGetChannelData.call(this, channel);
+      for (let i = 0; i < data.length; i += 8) {
+        data[i] += _audioNoise * (Math.random() > 0.5 ? 1 : -1);
+      }
+      return data;
+    };
+  } catch(e){}
 
   // ── WebGL ──────────────────────────────────────────────────────────────────
   const VENDOR   = ${JSON.stringify(v.webglVendor)};
@@ -282,7 +347,7 @@ function buildInjectScript(v) {
         if (p === 0x9246) return RENDERER;
         return orig.call(this, p);
       };
-    } catch(e) {}
+    } catch(e){}
   });
 
 })();
